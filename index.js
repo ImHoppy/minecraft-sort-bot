@@ -75,20 +75,33 @@ bot.once('spawn', async () => {
 						continue;
 					// await bot.moveSlotItem(itemElement.slot, 36);
 					// Check if itemElement name is in cache
-					console.log("To find :", itemElement.name);
+					// console.log("To find :", itemElement.name);
 					let block = cache.find(e => e.block.name == itemElement.name);
 					if (block == undefined)
 					{
-						const findBlock = bot.findBlock({
-							matching: (block) => {
-								return (block.name == itemElement.name && findNearChest(block) != null);
-							},
-							useExtraInfo: false,
-							point: barrel.position,
-							maxDistance: 128,
-							count: 1
-						});
-						console.log(findBlock?.name);
+						console.time("Finding@"+itemElement.name);
+						let findBlock = null;
+						{
+							const listBlocks = bot.findBlocks({
+								matching: (block) => {
+									return (block.name == itemElement.name);
+								},
+								useExtraInfo: false,
+								point: barrel.position,
+								maxDistance: 32,
+								count: 16
+							});
+							for (let index = 0; index < listBlocks.length; index++) {
+								const element = listBlocks[index];
+								if (findNearChest(element) != null)
+								{
+									findBlock = bot.blockAt(element);
+									break;
+								}
+							}
+						}
+						console.timeEnd("Finding@"+itemElement.name);
+						// console.log(findBlock?.name);
 						if (findBlock == null)
 						{
 							InvalidItem.push(itemElement);
@@ -97,20 +110,20 @@ bot.once('spawn', async () => {
 						}
 						block = findBlock;
 					}
-					console.log("i found it at", block.position);
+					// console.log("i found it at", block.position);
 					let chests = findAllNearChest(block);
 					if (chests == null)
 					{
 						InvalidItem.push(itemElement);
-						console.log("Invalid Item: " + itemElement.name);
+						// console.log("Invalid Item: " + itemElement.name);
 						continue;
 					}
 					// console.log("List of chests: ", chests);
 					await GotoBlock(block);
-					console.log(chests.map(e => e.position));
+					// console.log(chests.map(e => e.position));
 					for (let index = 0; index < chests.length; index++)
 					{
-						console.log("Chest: ", index);
+						// console.log("Chest: ", index);
 						const chestElement = chests[index];
 						let chest = await bot.openChest(chestElement);
 						// let emptySlot = chest.firstEmptyContainerSlot();
@@ -118,17 +131,17 @@ bot.once('spawn', async () => {
 						for (let index = 0; index < itemLists.length; index++)
 						{
 							const itemToDeposite = itemLists[index];
-							console.log("Item: ", index, itemToDeposite.count, itemToDeposite.name)
+							// console.log("Item: ", index, itemToDeposite.count, itemToDeposite.name)
 							if (itemToDeposite.name == itemElement.name)
 							{
-								console.log("Deposite item: ", itemToDeposite.name, " x ", itemToDeposite.count);
+								// console.log("Deposite item: ", itemToDeposite.name, " x ", itemToDeposite.count);
 								let emptySlot = chest.firstEmptyContainerSlot();
 								if (emptySlot == null)
 									break;
 								try {
 									await chest.deposit(itemToDeposite.type, null, itemToDeposite.count);
 								} catch (error) {
-									console.log("Error: ", error);
+									// console.log("Error: ", error);
 								}
 							}
 						}
@@ -177,21 +190,23 @@ bot.once('spawn', async () => {
 			} break;
 		}
 	})
-	function findNearChest(block) {
-		let blockAt = bot.blockAt(block.position.offset(1, 1, 0));
+	function findNearChest(blockPos) {
+		console.time("findNearChest")
+		let blockAt = bot.blockAt(blockPos.offset(1, 1, 0));
 		if (blockAt.name != "chest")
-			blockAt = bot.blockAt(block.position.offset(-1, 1, 0));
+			blockAt = bot.blockAt(blockPos.offset(-1, 1, 0));
 		if (blockAt.name != "chest")
-			blockAt = bot.blockAt(block.position.offset(0, 1, 1));
+			blockAt = bot.blockAt(blockPos.offset(0, 1, 1));
 		if (blockAt.name != "chest")
-			blockAt = bot.blockAt(block.position.offset(0, 1, -1));
+			blockAt = bot.blockAt(blockPos.offset(0, 1, -1));
+		console.timeEnd("findNearChest")
 		if (blockAt == null || blockAt.name != "chest")
-			return (null);	
+			return (null);
 		return blockAt;
 	}
 	function findAllNearChest(block) {
 		let chests = [];
-		let originChest = findNearChest(block);
+		let originChest = findNearChest(block.position);
 		if (originChest == null)
 			return null;
 		do {
