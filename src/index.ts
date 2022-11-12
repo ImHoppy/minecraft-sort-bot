@@ -22,7 +22,7 @@ interface ItemCache {
 interface CacheChest {
 	item: ItemCache;
 	pos: Vec3;
-	chests: Set<Vec3>;
+	chests?: Set<Vec3>;
 }
 
 const caches = new Set<CacheChest>();
@@ -104,7 +104,16 @@ bot.on("entityGone", (entity) => {
 	let chests = getAllChest(getChestNearest(entity));
 	if (chests == null) return;
 
+	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
+	let cache: CacheChest = { item: {present: metadata.present, id: metadata.itemId}, pos: entity.position };
 
+	caches.forEach((element) => {
+		if (element.pos == cache.pos) //&& (!element.item.present || element.item.id == cache.item.id))
+		{
+			caches.delete(element)
+		}
+	});
+	console.log(caches);
 	console.log("Entity dead");
 	// console.log("Entity dead", entity);
 });
