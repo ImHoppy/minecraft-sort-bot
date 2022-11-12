@@ -1,0 +1,153 @@
+import { Vec3 } from "vec3"
+// import { Entity } from "prismarine-entity";
+import { Entity } from "prismarine-entity";
+import { Block } from "prismarine-block";
+
+import * as mineflayer from "mineflayer"
+// import { pathfinder, Movements } from "mineflayer-pathfinder";
+
+const { pathfinder, Movements, goals: { GoalGetToBlock, GoalNear, GoalFollow } } = require('mineflayer-pathfinder');
+
+const bot = mineflayer.createBot({
+  host: process.argv[2] || 'localhost',
+  port: parseInt(process.argv[3]) || 25565,
+  username: process.argv[4] || 'bot',
+  password: process.argv[5]
+})
+
+interface ItemCache {
+	present: boolean;
+	id: number;
+}
+interface CacheChest {
+	item: ItemCache;
+	pos: Vec3;
+	chests: Set<Vec3>;
+}
+
+const caches = new Set<CacheChest>();
+
+bot.loadPlugin(pathfinder)
+
+bot.once('spawn', async () => {
+	await bot.waitForChunksToLoad()
+	bot.loadPlugin(pathfinder)
+	const defaultMove = new Movements(bot)
+
+	// @ts-expect-error
+	bot.pathfinder.setMovements(defaultMove)
+
+	bot.on('chat', async (username: string, message: string) => {
+		if (username === bot.username) return
+
+		switch (message.split(' ')[0]) {
+			case 'stop':
+				bot.clearControlStates()
+				break
+			case 'tri':
+			{
+				
+			} break;
+		}
+	})
+
+})
+
+enum Rotation {
+	Down	= 0,
+	Up		= 1,
+	North	= 2,
+	South	= 3,
+	West	= 4,
+	East	= 5
+}
+
+const getChestNearest = (itemFrame: Entity): Block | null => {
+	let chest: Block | null = null;
+	// @ts-expect-error
+	let rotation: Number = itemFrame.objectData;
+	const isUpOrDown = ():boolean => {return rotation == Rotation.Up || rotation == Rotation.Down};
+	console.log(rotation);
+	if (rotation == Rotation.West || isUpOrDown())
+		chest = bot.blockAt(itemFrame.position.offset(1, 0, 0), false);
+	if ((chest == null || chest.name != "chest") && (rotation == Rotation.East || isUpOrDown()))
+		chest = bot.blockAt(itemFrame.position.offset(-1, 0, 0), false);
+	if ((chest == null || chest.name != "chest") && (rotation == Rotation.North || isUpOrDown()))
+		chest = bot.blockAt(itemFrame.position.offset(0, 0, 1), false);
+	if ((chest == null || chest.name != "chest") && (rotation == Rotation.South || isUpOrDown()))
+		chest = bot.blockAt(itemFrame.position.offset(0, 0, -1), false);
+	if (chest == null || chest.name != "chest")
+		return (null);
+	return (chest);
+};
+
+function getAllChest(originChest: Block | null) {
+	let chests: Block[] = [];
+	if (originChest == null) return null;
+	do {
+		chests.push(originChest);
+		originChest = bot.blockAt(originChest.position.offset(0, 1, 0), false);
+	} while (originChest != null && originChest.name == "chest");
+	return chests;
+}
+
+// bot.on("entitySpawn", (entity) => {
+// 	if (entity.name?.toLowerCase() != "item_frame") return;
+// 	if (entity == null) return;
+// 	let chest = getChestNearest(entity);
+// 	if (chest == null) {console.log("Chest not found"); return;}
+// 	// { present: true, itemId: 28, itemCount: 1, nbtData: undefined },
+// });
+bot.on("entityGone", (entity) => {
+	if (entity == null) return;
+	if (entity.name != "item_frame") return;
+
+	let chests = getAllChest(getChestNearest(entity));
+	if (chests == null) return;
+
+
+	// console.log("Entity dead", entity);
+});
+interface metadata {
+	present: boolean;
+	itemId: number;
+	itemCount: number;
+	nbtData: number;
+}
+bot.on("entityUpdate", (entity: Entity) => {
+	if (entity == null) return;
+	if (entity.name != "item_frame") return;
+	let chests = getAllChest(getChestNearest(entity));
+	if (chests == null) return;
+
+	let chestsPosition = new Set(chests.map(chest => { return chest.position }));
+	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
+	let cache: CacheChest = { item: {present: metadata.present, id: metadata.itemId}, pos: entity.position, chests: chestsPosition };
+	let AlreadyExist: boolean = false;
+	caches.forEach((element) => {
+		if (element.pos == cache.pos) //&& (!element.item.present || element.item.id == cache.item.id))
+		{
+			element = cache;
+			AlreadyExist = true;
+		}
+	});
+	console.log(AlreadyExist)
+	if (!AlreadyExist)
+		caches.add(cache);
+	// console.log("Entity updated", entity); 
+	console.log(caches)
+});
+
+bot.on("blockUpdate", (oldBlock: Block | null, newBlock: Block): void | Promise<void> => {
+	
+	// Delete chest from cache
+	if (oldBlock != null && oldBlock.name == "chest") {}
+	// Add chest to cache
+	if (newBlock.name == "chest") {
+		let ent: Entity | null = bot.nearestEntity((entity: Entity) => {
+			return entity.name == 'item_frame'
+		});
+		console.log(ent);
+	}
+
+})
