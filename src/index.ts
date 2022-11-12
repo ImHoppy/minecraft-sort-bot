@@ -67,7 +67,6 @@ const getChestNearest = (itemFrame: Entity): Block | null => {
 	// @ts-expect-error
 	let rotation: Number = itemFrame.objectData;
 	const isUpOrDown = ():boolean => {return rotation == Rotation.Up || rotation == Rotation.Down};
-	console.log(rotation);
 	if (rotation == Rotation.West || isUpOrDown())
 		chest = bot.blockAt(itemFrame.position.offset(1, 0, 0), false);
 	if ((chest == null || chest.name != "chest") && (rotation == Rotation.East || isUpOrDown()))
@@ -106,6 +105,7 @@ bot.on("entityGone", (entity) => {
 	if (chests == null) return;
 
 
+	console.log("Entity dead");
 	// console.log("Entity dead", entity);
 });
 interface metadata {
@@ -127,15 +127,16 @@ bot.on("entityUpdate", (entity: Entity) => {
 	caches.forEach((element) => {
 		if (element.pos == cache.pos) //&& (!element.item.present || element.item.id == cache.item.id))
 		{
-			element = cache;
+			element.item = cache.item
+			element.chests = cache.chests
 			AlreadyExist = true;
 		}
 	});
 	console.log(AlreadyExist)
 	if (!AlreadyExist)
 		caches.add(cache);
-	// console.log("Entity updated", entity); 
 	console.log(caches)
+	console.log("Entity updated");
 });
 
 bot.on("blockUpdate", (oldBlock: Block | null, newBlock: Block): void | Promise<void> => {
