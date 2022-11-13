@@ -101,17 +101,12 @@ bot.on("entityGone", (entity) => {
 	if (entity == null) return;
 	if (entity.name != "item_frame") return;
 
-	let chests = getAllChest(getChestNearest(entity));
-	if (chests == null) return;
-
 	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
 	let cache: CacheChest = { item: {present: metadata.present, id: metadata.itemId}, pos: entity.position };
 
 	caches.forEach((element) => {
 		if (element.pos == cache.pos) //&& (!element.item.present || element.item.id == cache.item.id))
-		{
 			caches.delete(element)
-		}
 	});
 	console.log(caches);
 	console.log("Entity dead");
@@ -144,20 +139,34 @@ bot.on("entityUpdate", (entity: Entity) => {
 	console.log(AlreadyExist)
 	if (!AlreadyExist)
 		caches.add(cache);
-	console.log(caches)
+	// console.log(caches)
 	console.log("Entity updated");
 });
 
+// bot.on("entityGone", (ent: Entity) => {
+// 	if (ent == null) return;
+// 	if (ent.name != "item_frame") return;
+// 	console.log("Item drop", ent);
+// });
 bot.on("blockUpdate", (oldBlock: Block | null, newBlock: Block): void | Promise<void> => {
 	
-	// Delete chest from cache
-	if (oldBlock != null && oldBlock.name == "chest") {}
-	// Add chest to cache
-	if (newBlock.name == "chest") {
-		let ent: Entity | null = bot.nearestEntity((entity: Entity) => {
-			return entity.name == 'item_frame'
+	if (oldBlock != null && oldBlock.name == "chest") {
+		caches.forEach((element) => {
+			if (element.chests != null && element.chests.has(oldBlock.position))
+				element.chests.delete(oldBlock.position);
 		});
-		console.log(ent);
+	}
+	if (newBlock.name == "chest") {
+		console.log(newBlock.getProperties().type)
+		caches.forEach((element) => {
+			if (element.chests != null && element.chests.has(newBlock.position.offset(0, -1, 0)))
+				element.chests.add(newBlock.position);
+		});
+
+		// let ent: Entity | null = bot.nearestEntity((entity: Entity) => {
+		// 	return entity.name == 'item_frame'
+		// });
+		// console.log(ent);
 	}
 
 })
