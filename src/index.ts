@@ -22,7 +22,7 @@ interface ItemCache {
 interface CacheChest {
 	item: ItemCache;
 	pos: Vec3;
-	chests?: Set<Vec3>;
+	chests?: Array<Vec3>;
 }
 
 const caches = new Set<CacheChest>();
@@ -121,10 +121,10 @@ interface metadata {
 bot.on("entityUpdate", (entity: Entity) => {
 	if (entity == null) return;
 	if (entity.name != "item_frame") return;
-	let chests = getAllChest(getChestNearest(entity));
+	let chests = getAllChest(getChestNearest(entity)); // NOTE: Dont do this when entity exist already
 	if (chests == null) return;
 
-	let chestsPosition = new Set(chests.map(chest => { return chest.position }));
+	let chestsPosition = chests.map(chest => { return chest.position });
 	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
 	let cache: CacheChest = { item: {present: metadata.present, id: metadata.itemId}, pos: entity.position, chests: chestsPosition };
 	let AlreadyExist: boolean = false;
@@ -139,7 +139,7 @@ bot.on("entityUpdate", (entity: Entity) => {
 	console.log(AlreadyExist)
 	if (!AlreadyExist)
 		caches.add(cache);
-	// console.log(caches)
+	console.log(caches)
 	console.log("Entity updated");
 });
 
@@ -148,25 +148,28 @@ bot.on("entityUpdate", (entity: Entity) => {
 // 	if (ent.name != "item_frame") return;
 // 	console.log("Item drop", ent);
 // });
+
+
+const equalsXZ = function (a: Vec3, b: Vec3) {
+	return a.x == b.x && a.z == b.z;
+}
+
 bot.on("blockUpdate", (oldBlock: Block | null, newBlock: Block): void | Promise<void> => {
 	
 	if (oldBlock != null && oldBlock.name == "chest") {
 		caches.forEach((element) => {
-			if (element.chests != null && element.chests.has(oldBlock.position))
-				element.chests.delete(oldBlock.position);
+			if (element.chests != null)
+				element.chests = element.chests.filter((chest) => !chest.equals(oldBlock.position));
 		});
 	}
 	if (newBlock.name == "chest") {
 		console.log(newBlock.getProperties().type)
 		caches.forEach((element) => {
-			if (element.chests != null && element.chests.has(newBlock.position.offset(0, -1, 0)))
-				element.chests.add(newBlock.position);
+			if (element.chests != undefined)
+			{
+				if (equalsXZ(element.chests[0], newBlock.position) && element.chests.some((chest) => { return chest.equals(newBlock.position.offset(0, -1, 0)) }))
+					element.chests?.push(newBlock.position);
+			}
 		});
-
-		// let ent: Entity | null = bot.nearestEntity((entity: Entity) => {
-		// 	return entity.name == 'item_frame'
-		// });
-		// console.log(ent);
 	}
-
 })
