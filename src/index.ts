@@ -2,18 +2,17 @@ import { Vec3 } from "vec3"
 // import { Entity } from "prismarine-entity";
 import { Entity } from "prismarine-entity";
 import { Block } from "prismarine-block";
+import { Item } from "prismarine-item";
 
 import * as mineflayer from "mineflayer"
 // import { pathfinder, Movements } from "mineflayer-pathfinder";
+import {} from "mineflayer-pathfinder";
+import { pathfinder, Movements, goals} from "mineflayer-pathfinder";
+import { IndexedData } from "minecraft-data";
 
-const { pathfinder, Movements, goals: { GoalGetToBlock, GoalNear, GoalFollow } } = require('mineflayer-pathfinder');
+// @ts-nocheck
 
-const bot = mineflayer.createBot({
-  host: process.argv[2] || 'localhost',
-  port: parseInt(process.argv[3]) || 25565,
-  username: process.argv[4] || 'bot',
-  password: process.argv[5]
-})
+// const { pathfinder, Movements, goals: { GoalGetToBlock, GoalNear, GoalFollow } } = require('mineflayer-pathfinder');
 
 interface ItemCache {
 	present: boolean;
@@ -24,8 +23,20 @@ interface CacheChest {
 	pos: Vec3;
 	chests?: Array<Vec3>;
 }
+interface metadata {
+	present: boolean;
+	itemId: number;
+	itemCount: number;
+	nbtData: number;
+}
+const bot = mineflayer.createBot({
+	host: process.argv[2] || 'localhost',
+	port: parseInt(process.argv[3]) || 25565,
+	username: process.argv[4] || 'bot',
+	password: process.argv[5]
+});
 
-const caches = new Set<CacheChest>();
+const caches = new Array<CacheChest>();
 
 bot.loadPlugin(pathfinder)
 
@@ -34,7 +45,6 @@ bot.once('spawn', async () => {
 	bot.loadPlugin(pathfinder)
 	const defaultMove = new Movements(bot)
 
-	// @ts-expect-error
 	bot.pathfinder.setMovements(defaultMove)
 
 	bot.on('chat', async (username: string, message: string) => {
@@ -50,6 +60,44 @@ bot.once('spawn', async () => {
 			} break;
 		}
 	})
+
+	enum BotStatus {
+		Idle = 0,
+		Working = 1
+	}
+	let status: BotStatus = BotStatus.Idle
+	setInterval(async () => {
+		if (bot.pathfinder.isMoving() || status != BotStatus.Idle) return;
+		status = BotStatus.Working;
+		let InvalidItem = [];
+		bot.setQuickBarSlot(0);
+		let barrel = await FindGotoBlock("barrel");
+		if (barrel == false || barrel == null)
+			return;
+		await WithdrawAllFromBlock(barrel);
+		let botInventory =  bot.inventory.items();
+		for (let indexInv = 0; indexInv < botInventory.length; indexInv++) {
+			const item = botInventory[indexInv];
+
+			let cacheItem = caches.find(e => e.item.id == item.type);
+			if (cacheItem == undefined || cacheItem.chests == undefined) {
+				InvalidItem.push(item);
+				continue;
+			}
+			let chestBlock = bot.blockAt(cacheItem.chests[0], false);
+			if (chestBlock == null || chestBlock.name != "chest")
+				continue;
+			await GotoBlock(chestBlock);
+			for (let indexChest = 0; indexChest < cacheItem.chests.length; indexChest++) {
+				const chest = cacheItem.chests[indexChest];
+				if (chestBlock != null)
+					DepositItemToChest(chestBlock, item);
+				chestBlock = bot.blockAt(chest);
+			}
+
+		}
+		status = BotStatus.Idle;
+	}, 5000);
 
 })
 
@@ -104,20 +152,16 @@ bot.on("entityGone", (entity) => {
 	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
 	let cache: CacheChest = { item: {present: metadata.present, id: metadata.itemId}, pos: entity.position };
 
-	caches.forEach((element) => {
-		if (element.pos == cache.pos) //&& (!element.item.present || element.item.id == cache.item.id))
-			caches.delete(element)
+	// Remove the CacheChest if pos is the same as cache.pos
+	caches.forEach((cacheChest, index) => {
+		// if (cacheChest.pos.equals(cache.pos)) { // NOTE: maybe equals because its the same memory address ?
+		if (cacheChest.pos == cache.pos) {
+			caches.splice(index, 1);
+		}
 	});
-	console.log(caches);
 	console.log("Entity dead");
-	// console.log("Entity dead", entity);
 });
-interface metadata {
-	present: boolean;
-	itemId: number;
-	itemCount: number;
-	nbtData: number;
-}
+
 bot.on("entityUpdate", (entity: Entity) => {
 	if (entity == null) return;
 	if (entity.name != "item_frame") return;
@@ -128,7 +172,9 @@ bot.on("entityUpdate", (entity: Entity) => {
 	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
 	let cache: CacheChest = { item: {present: metadata.present, id: metadata.itemId}, pos: entity.position, chests: chestsPosition };
 	let AlreadyExist: boolean = false;
+
 	caches.forEach((element) => {
+		// if (cacheChest.pos.equals(cache.pos)) { // NOTE: maybe equals because its the same memory address ?
 		if (element.pos == cache.pos) //&& (!element.item.present || element.item.id == cache.item.id))
 		{
 			element.item = cache.item
@@ -136,40 +182,114 @@ bot.on("entityUpdate", (entity: Entity) => {
 			AlreadyExist = true;
 		}
 	});
-	console.log(AlreadyExist)
 	if (!AlreadyExist)
-		caches.add(cache);
-	console.log(caches)
+		caches.push(cache);
 	console.log("Entity updated");
 });
 
-// bot.on("entityGone", (ent: Entity) => {
-// 	if (ent == null) return;
-// 	if (ent.name != "item_frame") return;
-// 	console.log("Item drop", ent);
-// });
-
-
-const equalsXZ = function (a: Vec3, b: Vec3) {
-	return a.x == b.x && a.z == b.z;
-}
-
 bot.on("blockUpdate", (oldBlock: Block | null, newBlock: Block): void | Promise<void> => {
-	
 	if (oldBlock != null && oldBlock.name == "chest") {
 		caches.forEach((element) => {
 			if (element.chests != null)
 				element.chests = element.chests.filter((chest) => !chest.equals(oldBlock.position));
 		});
+		console.log("old chest updated");
 	}
 	if (newBlock.name == "chest") {
 		console.log(newBlock.getProperties().type)
 		caches.forEach((element) => {
-			if (element.chests != undefined)
+			if (element.chests != undefined && element.chests[0] != undefined)
 			{
 				if (equalsXZ(element.chests[0], newBlock.position) && element.chests.some((chest) => { return chest.equals(newBlock.position.offset(0, -1, 0)) }))
 					element.chests?.push(newBlock.position);
 			}
 		});
+		console.log("new chest updated");
 	}
 })
+
+
+let onGoal = false
+bot.on("goal_reached", (goal) => {
+	onGoal = false;
+	console.log("Goal reached")
+});
+
+const equalsXZ = function (a: Vec3, b: Vec3) {
+	return a.x == b.x && a.z == b.z;
+}
+
+async function GotoBlock(block: Block) {
+	if (block == null) return false;
+	if (block.position.distanceTo(bot.entity.position) < 5) return block;
+	if (onGoal)
+		bot.pathfinder.stop();
+	onGoal = true;
+	bot.pathfinder.setGoal(new goals.GoalGetToBlock(block.position.x, block.position.y, block.position.z));
+	console.log("Goal set to " + block.position.toString())
+	do {
+		await bot.waitForTicks(10);
+	} while (onGoal)
+	return (true);
+};
+
+async function FindGotoBlock(name: string) {
+	
+	const botPos = bot.entity.position;
+	if (botPos == undefined) return false;
+	
+	if (name == undefined || bot.registry.blocksByName[name] == undefined) return false;
+	const ids = [bot.registry.blocksByName[name].id]
+
+	const block = bot.findBlock({ matching: ids, maxDistance: 24, count: 1 })
+	if (block == null) return false;
+	await GotoBlock(block);
+	return (block);
+};
+
+async function WithdrawAllFromBlock(block: Block) {
+	if (block.name == "chest") return;
+	let chest = await bot.openChest(block);
+	let containerItems = chest.containerItems();
+	let len = containerItems.length;
+	// console.log(len, containerItems, chest.slots)
+	for (let index = 0; index < len; index++) {
+		const element = containerItems[index];
+		if (element != null)
+		{
+			// Check if bot has space in inventory
+			if (bot.inventory.firstEmptyInventorySlot() != null)
+			{
+				await chest.withdraw(element.type, element.metadata, element.count);
+				// await bot.waitForTicks(10);
+			}
+			else
+			{
+				bot.chat("Inventory full");
+				break;
+			}
+			// await chest.withdraw(element.type, element.metadata, element.count);
+		}
+	}
+	chest.close();
+}
+async function DepositItemToChest(block: Block, item: Item) {
+	let chest = await bot.openChest(block);
+	let emptySlot = chest.firstEmptyContainerSlot()
+	console.log("DepositItemToChest", emptySlot);
+	if (emptySlot != null)
+	{
+		for (let index = 0; index < 36; index++) {
+			const element = bot.inventory.slots[index];
+			if (element != null && element.type == item.type)
+			{
+				await chest.deposit(element.type, element.metadata, element.count);
+				emptySlot = chest.firstEmptyContainerSlot();
+				if (emptySlot == null)
+					break;
+			}
+		}
+	}
+	chest.close();
+	return (emptySlot != null);
+}
