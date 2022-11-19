@@ -75,29 +75,29 @@ bot.once('spawn', async () => {
 		if (barrel == false || barrel == null)
 			return;
 		await WithdrawAllFromBlock(barrel);
-		let botInventory =  bot.inventory.items();
+		let botInventory = bot.inventory.items();
 		for (let indexInv = 0; indexInv < botInventory.length; indexInv++) {
 			const item = botInventory[indexInv];
 
 			let cacheItem = caches.find(e => e.item.id == item.type);
-			if (cacheItem == undefined || cacheItem.chests == undefined) {
+			if (cacheItem == undefined || cacheItem.chests == undefined || !cacheItem.chests.length) {
 				InvalidItem.push(item);
 				continue;
 			}
-			let chestBlock = bot.blockAt(cacheItem.chests[0], false);
-			if (chestBlock == null || chestBlock.name != "chest")
-				continue;
-			await GotoBlock(chestBlock);
+			await GotoVec(cacheItem.pos);
 			for (let indexChest = 0; indexChest < cacheItem.chests.length; indexChest++) {
 				const chest = cacheItem.chests[indexChest];
-				if (chestBlock != null)
-					DepositItemToChest(chestBlock, item);
-				chestBlock = bot.blockAt(chest);
+				let chestBlock = bot.blockAt(chest);
+				if (chestBlock == null)
+					continue;
+				const chestIsEmpty = await DepositItemToChest(chestBlock, item);
+				// break out if chest is not empty and go to next chest
+				if (!chestIsEmpty)
+					break;
 			}
-
 		}
 		status = BotStatus.Idle;
-	}, 5000);
+	}, 10000);
 
 })
 
@@ -188,6 +188,7 @@ bot.on("entityUpdate", (entity: Entity) => {
 });
 
 bot.on("blockUpdate", (oldBlock: Block | null, newBlock: Block): void | Promise<void> => {
+	if (oldBlock?.name == "chest" && newBlock?.name == "chest") return;
 	if (oldBlock != null && oldBlock.name == "chest") {
 		caches.forEach((element) => {
 			if (element.chests != null)
@@ -233,6 +234,21 @@ async function GotoBlock(block: Block) {
 	return (true);
 };
 
+async function GotoVec(pos: Vec3) {
+	if (pos == null) return false;
+	if (pos.distanceTo(bot.entity.position) < 5) return pos;
+	if (onGoal)
+		bot.pathfinder.stop();
+	onGoal = true;
+	bot.pathfinder.setGoal(new goals.GoalGetToBlock(pos.x, pos.y, pos.z));
+	console.log("Goal set to " + pos.toString())
+	do {
+		await bot.waitForTicks(10);
+	} while (onGoal)
+	return (true);
+};
+
+
 async function FindGotoBlock(name: string) {
 	
 	const botPos = bot.entity.position;
@@ -257,7 +273,6 @@ async function WithdrawAllFromBlock(block: Block) {
 		const element = containerItems[index];
 		if (element != null)
 		{
-			// Check if bot has space in inventory
 			if (bot.inventory.firstEmptyInventorySlot() != null)
 			{
 				await chest.withdraw(element.type, element.metadata, element.count);
@@ -273,23 +288,27 @@ async function WithdrawAllFromBlock(block: Block) {
 	}
 	chest.close();
 }
+
+// Return true is full
 async function DepositItemToChest(block: Block, item: Item) {
 	let chest = await bot.openChest(block);
-	let emptySlot = chest.firstEmptyContainerSlot()
-	console.log("DepositItemToChest", emptySlot);
-	if (emptySlot != null)
-	{
-		for (let index = 0; index < 36; index++) {
-			const element = bot.inventory.slots[index];
-			if (element != null && element.type == item.type)
-			{
+	if (chest == null) return false;
+	let chestIsFull = false;
+	const inv = bot.inventory.items().filter((element) => element.name == item.name);
+	for (let index = 0; index < inv.length; index++) {
+		const element = inv[index];
+		if (element != null && element.type == item.type)
+		{
+			try {
 				await chest.deposit(element.type, element.metadata, element.count);
-				emptySlot = chest.firstEmptyContainerSlot();
-				if (emptySlot == null)
-					break;
+			} catch (error) {
+				console.log("Inventory full");
+				chestIsFull = true;
+				break;
 			}
 		}
 	}
 	chest.close();
-	return (emptySlot != null);
+	// console.log(emptySlot, emptySlot != null)
+	return (chestIsFull);
 }
