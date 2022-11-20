@@ -16,6 +16,7 @@
 		"dotenv": "^16.0.3",
 		"minecraft-data": "^3.17.0",
 		"mineflayer": "^4.5.1",
+		"mineflayer-auto-eat": "^3.0.1",
 		"mineflayer-pathfinder": "^2.4.0",
 		"prismarine-viewer": "^1.23.0"
 	},

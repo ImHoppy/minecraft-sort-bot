@@ -10,6 +10,8 @@ import {} from "mineflayer-pathfinder";
 import { pathfinder, Movements, goals} from "mineflayer-pathfinder";
 import { IndexedData } from "minecraft-data";
 
+const autoeat = require('mineflayer-auto-eat').default
+
 // @ts-nocheck
 
 // const { pathfinder, Movements, goals: { GoalGetToBlock, GoalNear, GoalFollow } } = require('mineflayer-pathfinder');
@@ -39,10 +41,16 @@ const bot = mineflayer.createBot({
 const caches = new Array<CacheChest>();
 
 bot.loadPlugin(pathfinder)
+bot.loadPlugin(autoeat)
 
 bot.once('spawn', async () => {
+
+	(bot as any).autoEat.options = {
+		useOffhand: true,
+        bannedFood: ['golden_apple', 'enchanted_golden_apple', 'rotten_flesh']
+    }
+
 	await bot.waitForChunksToLoad()
-	bot.loadPlugin(pathfinder)
 	const defaultMove = new Movements(bot)
 
 	bot.pathfinder.setMovements(defaultMove)
@@ -56,7 +64,20 @@ bot.once('spawn', async () => {
 				break
 			case 'tri':
 			{
-				
+				for (let index = bot.inventory.inventoryStart; index < bot.inventory.inventoryEnd; index++) {
+					const element = bot.inventory.slots[index];
+					console.log(element);
+				}
+				console.log(bot.inventory.inventoryEnd, bot.inventory.inventoryStart);
+				bot.transfer({
+					window: bot.inventory,
+					itemType: bot.registry.itemsByName['cooked_beef'].id,
+					metadata: null,
+					sourceStart: 36,
+					sourceEnd: 36,
+					destStart: 45,
+					destEnd: 45
+				});
 			} break;
 		}
 	})
@@ -69,17 +90,29 @@ bot.once('spawn', async () => {
 	setInterval(async () => {
 		if (bot.pathfinder.isMoving() || status != BotStatus.Idle) return;
 		status = BotStatus.Working;
-		let InvalidItem = [];
+		let InvalidItem: Item[] = [];
 		bot.setQuickBarSlot(0);
 		let barrel = await FindGotoBlock("barrel");
-		if (barrel == false || barrel == null)
+		if (barrel == null)
 			return;
 		await WithdrawAllFromBlock(barrel);
-		let botInventory = bot.inventory.items();
-		for (let indexInv = 0; indexInv < botInventory.length; indexInv++) {
-			const item = botInventory[indexInv];
 
-			let cacheItem = caches.find(e => e.item.id == item.type);
+		// NOTE: 
+		let botInventory = bot.inventory.items();
+		for (let indexInv = bot.inventory.inventoryStart; indexInv < bot.inventory.inventoryEnd; indexInv++) {
+			const item = bot.inventory.slots[indexInv];
+			if (item == null)
+				continue;
+
+			// Check if item.type is already in InvalidItem
+			if (InvalidItem.find((e) => e.type == item.type) != undefined)
+			{
+				InvalidItem.push(item);
+				continue;
+			}
+			console.log(caches)
+			let cachesItem = caches.filter(e => e.item.id == item.type);
+			let cacheItem = cachesItem[0]; 
 			if (cacheItem == undefined || cacheItem.chests == undefined || !cacheItem.chests.length) {
 				InvalidItem.push(item);
 				continue;
@@ -91,14 +124,30 @@ bot.once('spawn', async () => {
 				if (chestBlock == null)
 					continue;
 				const chestIsEmpty = await DepositItemToChest(chestBlock, item);
-				// break out if chest is not empty and go to next chest
+				console.log(item.name, chestIsEmpty);
 				if (!chestIsEmpty)
 					break;
 			}
+			if (bot.inventory.slots[indexInv] != null)
+				InvalidItem.push(bot.inventory.slots[indexInv]);
 		}
+
+		// NOTE: Deposite all invaliditem to barrel maybe set to Config.InvalidChest
+		await GotoVec(barrel?.position);
+		const barrelContainer = await bot.openChest(barrel);
+		InvalidItem.forEach(async (item) => {
+			try {
+				await barrelContainer.deposit(item.type, null, item.count);
+			} catch (error) {
+				console.log("Chest full");
+			}
+		});
+		barrelContainer.close();
+
 		status = BotStatus.Idle;
 	}, 10000);
 
+	// console.log(bot.inventory)
 })
 
 enum Rotation {
@@ -248,17 +297,16 @@ async function GotoVec(pos: Vec3) {
 	return (true);
 };
 
-
 async function FindGotoBlock(name: string) {
 	
 	const botPos = bot.entity.position;
-	if (botPos == undefined) return false;
+	if (botPos == undefined) return null;
 	
-	if (name == undefined || bot.registry.blocksByName[name] == undefined) return false;
+	if (name == undefined || bot.registry.blocksByName[name] == undefined) return null;
 	const ids = [bot.registry.blocksByName[name].id]
 
 	const block = bot.findBlock({ matching: ids, maxDistance: 24, count: 1 })
-	if (block == null) return false;
+	if (block == null) return null;
 	await GotoBlock(block);
 	return (block);
 };
@@ -273,15 +321,11 @@ async function WithdrawAllFromBlock(block: Block) {
 		const element = containerItems[index];
 		if (element != null)
 		{
-			if (bot.inventory.firstEmptyInventorySlot() != null)
-			{
+			try {
 				await chest.withdraw(element.type, element.metadata, element.count);
-				// await bot.waitForTicks(10);
-			}
-			else
-			{
+			} catch (error) {
 				bot.chat("Inventory full");
-				break;
+				break;					
 			}
 			// await chest.withdraw(element.type, element.metadata, element.count);
 		}
@@ -302,13 +346,14 @@ async function DepositItemToChest(block: Block, item: Item) {
 			try {
 				await chest.deposit(element.type, element.metadata, element.count);
 			} catch (error) {
-				console.log("Inventory full");
+				console.log("Chest full");
 				chestIsFull = true;
 				break;
 			}
 		}
+		if (chestIsFull) break;
 	}
 	chest.close();
 	// console.log(emptySlot, emptySlot != null)
-	return (chestIsFull);
+	return (!chestIsFull);
 }
