@@ -10,12 +10,36 @@ import {} from "mineflayer-pathfinder";
 import { pathfinder, Movements, goals} from "mineflayer-pathfinder";
 import { IndexedData } from "minecraft-data";
 
+// import autoeat from "mineflayer-auto-eat";
 const autoeat = require('mineflayer-auto-eat').default
 
 // @ts-nocheck
 
 // const { pathfinder, Movements, goals: { GoalGetToBlock, GoalNear, GoalFollow } } = require('mineflayer-pathfinder');
 
+interface AutoEatOptions {
+    priority: 'saturation' | 'foodPoints';
+    startAt: number;
+    bannedFood: string[];
+    eatingTimeout: number;
+    ignoreInventoryCheck: boolean;
+    checkOnItemPickup: boolean;
+    useOffhand: boolean;
+    equipOldItem: boolean;
+}
+interface AutoEat {
+	disabled: boolean;
+	isEating: boolean;
+	options: Partial<AutoEatOptions>;
+	eat: (offhand?: boolean) => Promise<void>;
+	disable: () => void;
+	enable: () => void;
+};
+type Bot = mineflayer.Bot & {
+	pathfinder: any;
+	autoEat: AutoEat;
+	registry: any;
+}
 interface ItemCache {
 	present: boolean;
 	id: number;
@@ -31,7 +55,7 @@ interface metadata {
 	itemCount: number;
 	nbtData: number;
 }
-const bot = mineflayer.createBot({
+const bot: Bot = <Bot>mineflayer.createBot({
 	host: process.argv[2] || 'localhost',
 	port: parseInt(process.argv[3]) || 25565,
 	username: process.argv[4] || 'bot',
@@ -45,7 +69,7 @@ bot.loadPlugin(autoeat)
 
 bot.once('spawn', async () => {
 
-	(bot as any).autoEat.options = {
+	bot.autoEat.options = {
 		useOffhand: true,
         bannedFood: ['golden_apple', 'enchanted_golden_apple', 'rotten_flesh']
     }
@@ -81,7 +105,6 @@ bot.once('spawn', async () => {
 			} break;
 		}
 	})
-
 	enum BotStatus {
 		Idle = 0,
 		Working = 1
@@ -97,7 +120,7 @@ bot.once('spawn', async () => {
 			return;
 		await WithdrawAllFromBlock(barrel);
 
-		// NOTE: 
+		// NOTE: Seperate function
 		let botInventory = bot.inventory.items();
 		for (let indexInv = bot.inventory.inventoryStart; indexInv < bot.inventory.inventoryEnd; indexInv++) {
 			const item = bot.inventory.slots[indexInv];
@@ -110,7 +133,7 @@ bot.once('spawn', async () => {
 				InvalidItem.push(item);
 				continue;
 			}
-			console.log(caches)
+			// console.log(caches)
 			let cachesItem = caches.filter(e => e.item.id == item.type);
 			let cacheItem = cachesItem[0]; 
 			if (cacheItem == undefined || cacheItem.chests == undefined || !cacheItem.chests.length) {
@@ -131,18 +154,24 @@ bot.once('spawn', async () => {
 			if (bot.inventory.slots[indexInv] != null)
 				InvalidItem.push(bot.inventory.slots[indexInv]);
 		}
-
-		// NOTE: Deposite all invaliditem to barrel maybe set to Config.InvalidChest
-		await GotoVec(barrel?.position);
-		const barrelContainer = await bot.openChest(barrel);
-		InvalidItem.forEach(async (item) => {
-			try {
-				await barrelContainer.deposit(item.type, null, item.count);
-			} catch (error) {
-				console.log("Chest full");
+		if (InvalidItem.length != 0)
+		{
+			// NOTE: Deposite all invaliditem to barrel maybe set to Config.InvalidChest
+			await GotoVec(barrel?.position);
+			const barrelContainer = await bot.openChest(barrel);
+			// For invalid item
+			for (let index = 0; index < InvalidItem.length; index++) {
+				const item = InvalidItem[index];
+				try {
+					await barrelContainer.deposit(item.type, null, item.count);
+				} catch (error) {
+					console.log("Chest full InvalidItemToBarrel");
+					break;
+				}
 			}
-		});
-		barrelContainer.close();
+			// TODO: Close before finish to deposit ???
+			barrelContainer.close();
+		}
 
 		status = BotStatus.Idle;
 	}, 10000);
@@ -346,7 +375,7 @@ async function DepositItemToChest(block: Block, item: Item) {
 			try {
 				await chest.deposit(element.type, element.metadata, element.count);
 			} catch (error) {
-				console.log("Chest full");
+				console.log("Chest full DepositItemToChest");
 				chestIsFull = true;
 				break;
 			}
