@@ -18,14 +18,14 @@ const autoeat = require('mineflayer-auto-eat').default
 // const { pathfinder, Movements, goals: { GoalGetToBlock, GoalNear, GoalFollow } } = require('mineflayer-pathfinder');
 
 interface AutoEatOptions {
-    priority: 'saturation' | 'foodPoints';
-    startAt: number;
-    bannedFood: string[];
-    eatingTimeout: number;
-    ignoreInventoryCheck: boolean;
-    checkOnItemPickup: boolean;
-    useOffhand: boolean;
-    equipOldItem: boolean;
+	priority: 'saturation' | 'foodPoints';
+	startAt: number;
+	bannedFood: string[];
+	eatingTimeout: number;
+	ignoreInventoryCheck: boolean;
+	checkOnItemPickup: boolean;
+	useOffhand: boolean;
+	equipOldItem: boolean;
 }
 interface AutoEat {
 	disabled: boolean;
@@ -44,16 +44,18 @@ interface ItemCache {
 	present: boolean;
 	id: number;
 }
-interface CacheChest {
+interface ICacheChest{
 	item: ItemCache;
 	pos: Vec3;
 	chests?: Array<Vec3>;
+	regex: RegExp;
+	equal(CacheChest: CacheChest): boolean;
 }
 interface metadata {
 	present: boolean;
 	itemId: number;
 	itemCount: number;
-	nbtData: number;
+	nbtData: any;
 }
 const bot: Bot = <Bot>mineflayer.createBot({
 	host: process.argv[2] || 'localhost',
@@ -61,6 +63,29 @@ const bot: Bot = <Bot>mineflayer.createBot({
 	username: process.argv[4] || 'bot',
 	password: process.argv[5]
 });
+
+class CacheChest implements ICacheChest
+{
+	
+	item: ItemCache;
+	pos: Vec3;
+	chests?: Array<Vec3>;
+	regex: RegExp;
+
+	constructor(item: ItemCache, pos: Vec3, chests?: Array<Vec3>, regex?: RegExp) {
+		this.item = item;
+		this.pos = pos;
+		this.chests = chests;
+		if (regex != null)
+			this.regex = regex;
+		else
+			this.regex = new RegExp(`^${item.id}$`);
+	}
+	equal(CacheChest: CacheChest): boolean {
+
+		return this.item.id == CacheChest.item.id && this.pos.equals(CacheChest.pos);
+	}
+}
 
 const caches = new Array<CacheChest>();
 
@@ -71,11 +96,12 @@ bot.once('spawn', async () => {
 
 	bot.autoEat.options = {
 		useOffhand: true,
-        bannedFood: ['golden_apple', 'enchanted_golden_apple', 'rotten_flesh']
-    }
+		bannedFood: ['golden_apple', 'enchanted_golden_apple', 'rotten_flesh']
+	}
 
 	await bot.waitForChunksToLoad()
-	const defaultMove = new Movements(bot)
+	// @ts-ignore
+	const defaultMove = new Movements(bot, bot.mcData)
 
 	bot.pathfinder.setMovements(defaultMove)
 
@@ -135,20 +161,21 @@ bot.once('spawn', async () => {
 			}
 			// console.log(caches)
 			let cachesItem = caches.filter(e => e.item.id == item.type);
-			let cacheItem = cachesItem[0]; 
+			let cacheItem = cachesItem[0];
 			if (cacheItem == undefined || cacheItem.chests == undefined || !cacheItem.chests.length) {
 				InvalidItem.push(item);
 				continue;
 			}
 			await GotoVec(cacheItem.pos);
+			// NOTE: For all chests and find empty chest
 			for (let indexChest = 0; indexChest < cacheItem.chests.length; indexChest++) {
 				const chest = cacheItem.chests[indexChest];
 				let chestBlock = bot.blockAt(chest);
 				if (chestBlock == null)
 					continue;
-				const chestIsEmpty = await DepositItemToChest(chestBlock, item);
-				console.log(item.name, chestIsEmpty);
-				if (!chestIsEmpty)
+				const chestIsFull = await DepositItemToChest(chestBlock, item);
+				console.log(item.name, chestIsFull);
+				if (! chestIsFull)
 					break;
 			}
 			if (bot.inventory.slots[indexInv] != null)
@@ -190,8 +217,7 @@ enum Rotation {
 
 const getChestNearest = (itemFrame: Entity): Block | null => {
 	let chest: Block | null = null;
-	// @ts-expect-error
-	let rotation: Number = itemFrame.objectData;
+	let rotation: Number = (<any>itemFrame).objectData;
 	const isUpOrDown = ():boolean => {return rotation == Rotation.Up || rotation == Rotation.Down};
 	if (rotation == Rotation.West || isUpOrDown())
 		chest = bot.blockAt(itemFrame.position.offset(1, 0, 0), false);
@@ -228,12 +254,12 @@ bot.on("entityGone", (entity) => {
 	if (entity.name != "item_frame") return;
 
 	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
-	let cache: CacheChest = { item: {present: metadata.present, id: metadata.itemId}, pos: entity.position };
+	let cache: CacheChest = new CacheChest({present: metadata.present, id: metadata.itemId}, entity.position);
 
 	// Remove the CacheChest if pos is the same as cache.pos
 	caches.forEach((cacheChest, index) => {
 		// if (cacheChest.pos.equals(cache.pos)) { // NOTE: maybe equals because its the same memory address ?
-		if (cacheChest.pos == cache.pos) {
+		if (cacheChest.equal(cache)) {
 			caches.splice(index, 1);
 		}
 	});
@@ -243,17 +269,17 @@ bot.on("entityGone", (entity) => {
 bot.on("entityUpdate", (entity: Entity) => {
 	if (entity == null) return;
 	if (entity.name != "item_frame") return;
-	let chests = getAllChest(getChestNearest(entity)); // NOTE: Dont do this when entity exist already
+	let chests = getAllChest(getChestNearest(entity)); // NOTE: Dont do this when entity exist already?
 	if (chests == null) return;
 
 	let chestsPosition = chests.map(chest => { return chest.position });
 	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
-	let cache: CacheChest = { item: {present: metadata.present, id: metadata.itemId}, pos: entity.position, chests: chestsPosition };
+	let cache: CacheChest = new CacheChest({present: metadata.present, id: metadata.itemId}, entity.position, chestsPosition);
 	let AlreadyExist: boolean = false;
 
 	caches.forEach((element) => {
 		// if (cacheChest.pos.equals(cache.pos)) { // NOTE: maybe equals because its the same memory address ?
-		if (element.pos == cache.pos) //&& (!element.item.present || element.item.id == cache.item.id))
+		if (element.equal(cache)) //&& (!element.item.present || element.item.id == cache.item.id))
 		{
 			element.item = cache.item
 			element.chests = cache.chests
@@ -363,7 +389,7 @@ async function WithdrawAllFromBlock(block: Block) {
 }
 
 // Return true is full
-async function DepositItemToChest(block: Block, item: Item) {
+async function DepositItemToChest(block: Block, item: Item): Promise<boolean> {
 	let chest = await bot.openChest(block);
 	if (chest == null) return false;
 	let chestIsFull = false;
@@ -384,5 +410,5 @@ async function DepositItemToChest(block: Block, item: Item) {
 	}
 	chest.close();
 	// console.log(emptySlot, emptySlot != null)
-	return (!chestIsFull);
+	return (chestIsFull);
 }
