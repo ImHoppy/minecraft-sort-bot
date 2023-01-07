@@ -4,20 +4,23 @@
 	"description": "",
 	"main": "index.js",
 	"scripts": {
+		"start:server": "cd server && java -jar server-1.19.jar --nogui",
 		"start:dev": "nodemon",
 		"start": "npm run build && node build/index.js",
 		"build": "rimraf ./build && tsc",
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"keywords": [],
-	"author": "",
+	"author": "Hoppy",
 	"license": "ISC",
 	"dependencies": {
 		"dotenv": "^16.0.3",
 		"minecraft-data": "^3.17.0",
 		"mineflayer": "^4.5.1",
-		"mineflayer-auto-eat": "^3.0.1",
+		"mineflayer-auto-eat": "^3.3.0",
 		"mineflayer-pathfinder": "^2.4.0",
+		"prismarine-entity": "^2.2.0",
+		"prismarine-item": "^1.12.1",
 		"prismarine-viewer": "^1.23.0"
 	},
 	"devDependencies": {
