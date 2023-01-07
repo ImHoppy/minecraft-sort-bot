@@ -8,7 +8,9 @@ import * as mineflayer from "mineflayer"
 // import { pathfinder, Movements } from "mineflayer-pathfinder";
 import {} from "mineflayer-pathfinder";
 import { pathfinder, Movements, goals} from "mineflayer-pathfinder";
-import { IndexedData } from "minecraft-data";
+
+import minecraftData from 'minecraft-data';
+const mcData = minecraftData('1.19')
 
 // import autoeat from "mineflayer-auto-eat";
 const autoeat = require('mineflayer-auto-eat').default
@@ -160,21 +162,20 @@ bot.once('spawn', async () => {
 				continue;
 			}
 			// console.log(caches)
-			let cachesItem = caches.filter(e => e.item.id == item.type);
+			let cachesItem = caches.filter(e => e.regex.test(item.name) || e.regex.test(item.displayName));
 			let cacheItem = cachesItem[0];
 			if (cacheItem == undefined || cacheItem.chests == undefined || !cacheItem.chests.length) {
 				InvalidItem.push(item);
 				continue;
 			}
 			await GotoVec(cacheItem.pos);
-			// NOTE: For all chests and find empty chest
+			// For all chests and find empty chest
 			for (let indexChest = 0; indexChest < cacheItem.chests.length; indexChest++) {
 				const chest = cacheItem.chests[indexChest];
-				let chestBlock = bot.blockAt(chest);
+				let chestBlock = bot.blockAt(chest, false);
 				if (chestBlock == null)
 					continue;
 				const chestIsFull = await DepositItemToChest(chestBlock, item);
-				console.log(item.name, chestIsFull);
 				if (! chestIsFull)
 					break;
 			}
@@ -196,7 +197,6 @@ bot.once('spawn', async () => {
 					break;
 				}
 			}
-			// TODO: Close before finish to deposit ???
 			barrelContainer.close();
 		}
 
@@ -242,13 +242,6 @@ function getAllChest(originChest: Block | null) {
 	return chests;
 }
 
-// bot.on("entitySpawn", (entity) => {
-// 	if (entity.name?.toLowerCase() != "item_frame") return;
-// 	if (entity == null) return;
-// 	let chest = getChestNearest(entity);
-// 	if (chest == null) {console.log("Chest not found"); return;}
-// 	// { present: true, itemId: 28, itemCount: 1, nbtData: undefined },
-// });
 bot.on("entityGone", (entity) => {
 	if (entity == null) return;
 	if (entity.name != "item_frame") return;
@@ -258,7 +251,6 @@ bot.on("entityGone", (entity) => {
 
 	// Remove the CacheChest if pos is the same as cache.pos
 	caches.forEach((cacheChest, index) => {
-		// if (cacheChest.pos.equals(cache.pos)) { // NOTE: maybe equals because its the same memory address ?
 		if (cacheChest.equal(cache)) {
 			caches.splice(index, 1);
 		}
@@ -266,19 +258,33 @@ bot.on("entityGone", (entity) => {
 	console.log("Entity dead");
 });
 
+const getRegex = (metadata: metadata): RegExp => {
+	let regex: string = mcData.items[metadata.itemId].name;
+	if (metadata.nbtData != undefined
+		&& metadata.nbtData.type == "compound"
+		&& metadata.nbtData.value.display != undefined
+		&& metadata.nbtData.value.display.type == "compound"
+		&& metadata.nbtData.value.display.value.Name != undefined
+		&& metadata.nbtData.value.display.value.Name.type == "string")
+	{
+		let DisplayName: {type:string, text:string} = JSON.parse(metadata.nbtData.value.display.value.Name.value);
+		regex = DisplayName.text.replace(/(?<!\.)\*/g, ".*");
+	}
+	return new RegExp(regex);
+};
+
 bot.on("entityUpdate", (entity: Entity) => {
 	if (entity == null) return;
 	if (entity.name != "item_frame") return;
-	let chests = getAllChest(getChestNearest(entity)); // NOTE: Dont do this when entity exist already?
+	let chests = getAllChest(getChestNearest(entity));
 	if (chests == null) return;
-
+	
 	let chestsPosition = chests.map(chest => { return chest.position });
 	let metadata: metadata = entity.metadata.slice(-2)[0] as metadata;
-	let cache: CacheChest = new CacheChest({present: metadata.present, id: metadata.itemId}, entity.position, chestsPosition);
+	let cache: CacheChest = new CacheChest({present: metadata.present, id: metadata.itemId}, entity.position, chestsPosition, getRegex(metadata));
 	let AlreadyExist: boolean = false;
 
 	caches.forEach((element) => {
-		// if (cacheChest.pos.equals(cache.pos)) { // NOTE: maybe equals because its the same memory address ?
 		if (element.equal(cache)) //&& (!element.item.present || element.item.id == cache.item.id))
 		{
 			element.item = cache.item
@@ -288,17 +294,8 @@ bot.on("entityUpdate", (entity: Entity) => {
 	});
 	if (!AlreadyExist)
 		caches.push(cache);
-	console.log("Entity updated", metadata.itemId);
-	if (metadata.nbtData != undefined
-		&& metadata.nbtData.type == "compound"
-		&& metadata.nbtData.value.display != undefined
-		&& metadata.nbtData.value.display.type == "compound"
-		&& metadata.nbtData.value.display.value.Name != undefined
-		&& metadata.nbtData.value.display.value.Name.type == "string")
-	{
-		let json = JSON.parse(metadata.nbtData.value.display.value.Name.value);
-		console.log("Display name: ", json.text);
-	}
+
+	console.log("Entity updated", getRegex(metadata));
 });
 
 bot.on("blockUpdate", (oldBlock: Block | null, newBlock: Block): void | Promise<void> => {
@@ -384,7 +381,7 @@ async function WithdrawAllFromBlock(block: Block) {
 	// console.log(len, containerItems, chest.slots)
 	for (let index = 0; index < len; index++) {
 		const element = containerItems[index];
-		if (element != null)
+		if (element != null && caches.find(e => e.regex.test(element.name) || e.regex.test(element.displayName)))
 		{
 			try {
 				await chest.withdraw(element.type, element.metadata, element.count);
