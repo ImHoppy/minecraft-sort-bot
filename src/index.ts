@@ -288,7 +288,17 @@ bot.on("entityUpdate", (entity: Entity) => {
 	});
 	if (!AlreadyExist)
 		caches.push(cache);
-	console.log("Entity updated");
+	console.log("Entity updated", metadata.itemId);
+	if (metadata.nbtData != undefined
+		&& metadata.nbtData.type == "compound"
+		&& metadata.nbtData.value.display != undefined
+		&& metadata.nbtData.value.display.type == "compound"
+		&& metadata.nbtData.value.display.value.Name != undefined
+		&& metadata.nbtData.value.display.value.Name.type == "string")
+	{
+		let json = JSON.parse(metadata.nbtData.value.display.value.Name.value);
+		console.log("Display name: ", json.text);
+	}
 });
 
 bot.on("blockUpdate", (oldBlock: Block | null, newBlock: Block): void | Promise<void> => {
