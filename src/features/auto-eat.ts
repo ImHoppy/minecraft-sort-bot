@@ -1,5 +1,5 @@
 import { Bot } from "../declarations";
-import autoEat from "mineflayer-auto-eat";
+import { plugin as autoEat } from "mineflayer-auto-eat";
 
 
 export function preConfigureAutoEat(bot: Bot) {
