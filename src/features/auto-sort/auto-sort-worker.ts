@@ -178,7 +178,7 @@ async function depositItemToChest(
   block: Block,
   item: Item
 ): Promise<boolean> {
-  bot.chat(`Je mets ${item?.name} dans ${block?.position}`);
+  //bot.chat(`Je mets ${item?.name} dans ${block?.position}`);
   let chest = await bot.openChest(block);
   if (chest == null) return false;
   let chestIsFull = false;
