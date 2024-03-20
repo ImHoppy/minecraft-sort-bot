@@ -2,3 +2,7 @@
 test.js
 server/*
 node_modules
+event
+run
+yarn.lock
+supervise
