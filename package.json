@@ -1,13 +1,11 @@
 {
-	"name": "minecraft-bots",
-	"version": "1.0.0",
+	"name": "minecraft-sort-bot",
+	"version": "1.1.0",
 	"description": "",
-	"main": "index.js",
+	"main": "index.ts",
 	"scripts": {
-		"start:server": "cd server && java -jar server-1.19.jar --nogui",
 		"start:dev": "nodemon",
-		"start": "npm run build && node build/index.js",
-		"build": "rimraf ./build && tsc",
+		"start": "ts-node src/index.ts",
 		"test": "echo \"Error: no test specified\" && exit 1"
 	},
 	"keywords": [],
@@ -16,12 +14,13 @@
 	"dependencies": {
 		"dotenv": "^16.0.3",
 		"minecraft-data": "^3.17.0",
-		"mineflayer": "^4.5.1",
+		"mineflayer": "^4.20.0",
 		"mineflayer-auto-eat": "^3.3.0",
 		"mineflayer-pathfinder": "^2.4.0",
 		"prismarine-entity": "^2.2.0",
 		"prismarine-item": "^1.12.1",
-		"prismarine-viewer": "^1.23.0"
+		"prismarine-viewer": "^1.23.0",
+		"mineflayer-blockfinder": "0.0.7"
 	},
 	"devDependencies": {
 		"@types/node": "^18.11.9",
